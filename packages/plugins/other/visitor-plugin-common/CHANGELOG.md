@@ -1,5 +1,20 @@
 # @graphql-codegen/visitor-plugin-common
 
+## 7.2.9
+
+### Patch Changes
+
+- [#11037](https://github.com/dotansimha/graphql-code-generator/pull/11037)
+  [`463e6ef`](https://github.com/dotansimha/graphql-code-generator/commit/463e6eff471a4e55d4a727b342051e5ff4e4c3e0)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - Fix type errors in `visitor-plugin-common`
+  (`base-types-visitor`) under `strict: true`:
+  - `BaseTypesVisitor`'s constructor takes `additionalConfig` as `Partial<TPluginConfig>`, since the
+    visitor fills in the defaults for every key it leaves out.
+  - `BaseTypesVisitor` handles input objects, objects, interfaces, unions and enums without
+    `fields`, `types`, `values` or `description` by treating them as empty, instead of throwing.
+
+  Generated output is unchanged.
+
 ## 7.2.8
 
 ### Patch Changes
