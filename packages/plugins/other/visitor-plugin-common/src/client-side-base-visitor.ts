@@ -15,12 +15,12 @@ import {
   SelectionNode,
 } from 'graphql';
 import gqlTag from 'graphql-tag';
-import { normalizeImportExtension, oldVisit, Types } from '@graphql-codegen/plugin-helpers';
+import { oldVisit, Types } from '@graphql-codegen/plugin-helpers';
 import { optimizeDocumentNode } from '@graphql-tools/optimize';
 import { BaseVisitor, ParsedConfig, RawConfig } from './base-visitor.js';
 import { generateFragmentImportStatement } from './imports.js';
 import { LoadedFragment, ParsedImport } from './types.js';
-import { buildScalarsFromConfig, getConfigValue } from './utils.js';
+import { buildScalarsFromConfig, getConfigValue, hasFragmentVariables } from './utils.js';
 
 gqlTag.enableExperimentalFragmentVariables();
 
@@ -30,6 +30,7 @@ export enum DocumentMode {
   documentNodeImportFragments = 'documentNodeImportFragments',
   external = 'external',
   string = 'string',
+  plainString = 'plainString',
 }
 
 const EXTENSIONS_TO_REMOVE = ['.ts', '.tsx', '.js', '.jsx'];
@@ -134,6 +135,8 @@ export interface RawClientSideBasePluginConfig extends RawConfig {
    * - `documentNode`: document nodes will be generated as objects when we generate the templates.
    * - `documentNodeImportFragments`: Similar to documentNode except it imports external fragments instead of embedding them.
    * - `external`: document nodes are imported from an external file. To be used with `importDocumentNodeExternallyFrom`
+   * - `string`: documents are generated as `TypedDocumentString` instances, a `String` subclass that carries result and variables types. The class is generated into the output.
+   * - `plainString`: documents are generated as plain template strings, with fragments embedded. No class, import or type cast is generated, so the documents are typed as `string`.
    *
    * Note that some plugins (like `typescript-graphql-request`) also supports `string` for this parameter.
    *
@@ -145,6 +148,35 @@ export interface RawClientSideBasePluginConfig extends RawConfig {
    * This will remove all "loc" and "description" fields from the compiled document, and will remove all empty arrays (such as `directives`, `arguments` and `variableDefinitions`).
    */
   optimizeDocumentNode?: boolean;
+  /**
+   * @default false
+   * @description If you are using `documentMode: graphQLTag`, you can set this to `true` to make each fragment document include the fragments that it spreads.
+   * This is useful if you want to use a fragment document on its own, e.g. to read or write a fragment in a client cache.
+   * The fragment document can then contain more than one fragment definition.
+   *
+   * Note that the same fragment can then appear more than once in the source of a document.
+   * Use this option only if your `gql` tag (check `gqlImport`) keeps one definition for each fragment name, like `graphql-tag` does.
+   *
+   * @exampleMarkdown
+   * ```ts filename="codegen.ts"
+   *  import type { CodegenConfig } from '@graphql-codegen/cli';
+   *
+   *  const config: CodegenConfig = {
+   *    // ...
+   *    generates: {
+   *      'path/to/file': {
+   *        // plugins...
+   *        config: {
+   *          documentMode: 'graphQLTag',
+   *          inlineReferencedFragmentsInFragmentDocuments: true,
+   *        },
+   *      },
+   *    },
+   *  };
+   *  export default config;
+   * ```
+   */
+  inlineReferencedFragmentsInFragmentDocuments?: boolean;
   /**
    * @default ""
    * @description This config is used internally by presets, but you can use it manually to tell codegen to prefix all base types that it's using.
@@ -226,6 +258,7 @@ export interface ClientSideBasePluginConfig extends ParsedConfig {
   globalNamespace?: boolean;
   pureMagicComment?: boolean;
   optimizeDocumentNode: boolean;
+  inlineReferencedFragmentsInFragmentDocuments: boolean;
   experimentalFragmentVariables?: boolean;
   unstable_onExecutableDocumentNode?: Unstable_OnExecutableDocumentNode;
   unstable_omitDefinitions?: boolean;
@@ -262,6 +295,10 @@ export class ClientSideBaseVisitor<
       scalars: buildScalarsFromConfig(_schema, rawConfig),
       dedupeOperationSuffix: getConfigValue(rawConfig.dedupeOperationSuffix, false),
       optimizeDocumentNode: getConfigValue(rawConfig.optimizeDocumentNode, true),
+      inlineReferencedFragmentsInFragmentDocuments: getConfigValue(
+        rawConfig.inlineReferencedFragmentsInFragmentDocuments,
+        false,
+      ),
       omitOperationSuffix: getConfigValue(rawConfig.omitOperationSuffix, false),
       gqlImport: rawConfig.gqlImport || null,
       documentNodeImport: rawConfig.documentNodeImport || null,
@@ -335,7 +372,8 @@ export class ClientSideBaseVisitor<
     if (fragments && fragments.length > 0) {
       if (
         this.config.documentMode === DocumentMode.documentNode ||
-        this.config.documentMode === DocumentMode.string
+        this.config.documentMode === DocumentMode.string ||
+        this.config.documentMode === DocumentMode.plainString
       ) {
         return Array.from(this._fragments.values())
           .filter(f => fragments.includes(this.getFragmentVariableName(f.name)))
@@ -345,7 +383,10 @@ export class ClientSideBaseVisitor<
       if (this.config.documentMode === DocumentMode.documentNodeImportFragments) {
         return '';
       }
-      if (nodeKind !== 'OperationDefinition') {
+      if (
+        nodeKind !== 'OperationDefinition' &&
+        !this.config.inlineReferencedFragmentsInFragmentDocuments
+      ) {
         return '';
       }
       return String(fragments.map(name => '${' + name + '}').join('\n'));
@@ -378,7 +419,7 @@ export class ClientSideBaseVisitor<
 
     const documentNode: DocumentNode = { kind: Kind.DOCUMENT, definitions: allDefinitions };
 
-    return this._onExecutableDocumentNode(documentNode);
+    return this._onExecutableDocumentNode?.(documentNode);
   }
 
   protected _gql(node: FragmentDefinitionNode | OperationDefinitionNode): string {
@@ -386,7 +427,9 @@ export class ClientSideBaseVisitor<
 
     const includeNestedFragments =
       this.config.documentMode === DocumentMode.documentNode ||
-      (dedupeFragments && node.kind === 'OperationDefinition');
+      this.config.documentMode === DocumentMode.string ||
+      this.config.documentMode === DocumentMode.plainString ||
+      node.kind === 'OperationDefinition';
     const fragmentNames = this._extractFragments(node, includeNestedFragments);
     const fragments = this._transformFragments(fragmentNames);
 
@@ -451,6 +494,10 @@ export class ClientSideBaseVisitor<
 
     if (this.config.documentMode === DocumentMode.string) {
       return '`' + doc + '`';
+    }
+
+    if (this.config.documentMode === DocumentMode.plainString) {
+      return `\`${doc}\``;
     }
 
     const gqlImport = this._parseImport(this.config.gqlImport || 'graphql-tag');
@@ -525,7 +572,7 @@ export class ClientSideBaseVisitor<
         useTypesPrefix: true,
         suffix: fragmentTypeSuffix,
       }),
-      this.config.experimentalFragmentVariables
+      this.config.experimentalFragmentVariables || hasFragmentVariables(fragmentDocument)
         ? this.convertName(fragmentDocument.name.value, {
             suffix: fragmentTypeSuffix + 'Variables',
           })
@@ -624,10 +671,7 @@ export class ClientSideBaseVisitor<
   private clearExtension(path: string): string {
     const extension = extname(path);
 
-    const importExtension = normalizeImportExtension({
-      emitLegacyCommonJSImports: this.config.emitLegacyCommonJSImports,
-      importExtension: this.config.importExtension,
-    });
+    const importExtension = this.config.importExtension;
 
     if (extension === importExtension) {
       return path;
@@ -676,10 +720,7 @@ export class ClientSideBaseVisitor<
             this._documents.length === 1
           ) {
             let documentPath = `./${this.clearExtension(basename(this._documents[0].location || ''))}`;
-            documentPath += normalizeImportExtension({
-              emitLegacyCommonJSImports: this.config.emitLegacyCommonJSImports,
-              importExtension: this.config.importExtension,
-            });
+            documentPath += this.config.importExtension;
 
             this._imports.add(`import * as Operations from '${documentPath}';`);
           } else {
@@ -721,8 +762,8 @@ export class ClientSideBaseVisitor<
               alreadyImported.set(path, new Set<string>());
             }
 
-            const alreadyImportedForPath = alreadyImported.get(path);
-            const newIdentifiers = identifiers.filter(
+            const alreadyImportedForPath = alreadyImported.get(path) || new Set();
+            const newIdentifiers = (identifiers || []).filter(
               identifier => !alreadyImportedForPath.has(identifier.name),
             );
             for (const newIdentifier of newIdentifiers)
@@ -736,7 +777,6 @@ export class ClientSideBaseVisitor<
                 ...fragmentImport.importSource,
                 identifiers: newIdentifiers,
               },
-              emitLegacyCommonJSImports: this.config.emitLegacyCommonJSImports,
             };
           })
           // remove any imports that now have no identifiers in them

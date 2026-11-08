@@ -7,7 +7,36 @@ describe('TypedDocumentNode', () => {
   it('Should not output imports when there are no operations at all', async () => {
     const result = (await plugin(null as any, [], {})) as Types.ComplexPluginOutput;
     expect(result.content).toBe('');
-    expect(result.prepend.length).toBe(0);
+    expect(result.prepend?.length).toBe(0);
+  });
+
+  it.each(Object.values(DocumentMode).filter(mode => mode !== DocumentMode.string))(
+    'Should not output imports when there are no operations and documentMode=%s',
+    async documentMode => {
+      const result = (await plugin(null as any, [], { documentMode })) as Types.ComplexPluginOutput;
+      expect(result.content).toBe('');
+      expect(result.prepend?.length).toBe(0);
+    },
+  );
+
+  it('Should output imports when there are no operations and documentMode=string', async () => {
+    const result = (await plugin(null as any, [], {
+      documentMode: DocumentMode.string,
+    })) as Types.ComplexPluginOutput;
+    expect(result.content).toContain('implements DocumentTypeDecoration<TResult, TVariables>');
+    expect(result.prepend).toEqual([
+      `import { DocumentTypeDecoration } from '@graphql-typed-document-node/core';`,
+    ]);
+  });
+
+  it('Should respect useTypeImports when there are no operations and documentMode=string', async () => {
+    const result = (await plugin(null as any, [], {
+      documentMode: DocumentMode.string,
+      useTypeImports: true,
+    })) as Types.ComplexPluginOutput;
+    expect(result.prepend).toEqual([
+      `import type { DocumentTypeDecoration } from '@graphql-typed-document-node/core';`,
+    ]);
   });
 
   it('dedupes fragments automatically when documentMode=graphQLTag', async () => {
@@ -67,6 +96,133 @@ describe('TypedDocumentNode', () => {
         name
       }
           \` as unknown as DocumentNode<PersonDetailsFragment, unknown>;
+      export const PersonDocument = gql\`
+          query Person {
+        person(id: 1) {
+          ...PersonDetails
+          children {
+            ...BasePersonDetails
+          }
+        }
+      }
+          \${PersonDetailsFragmentDoc}
+      \${BasePersonDetailsFragmentDoc}\` as unknown as DocumentNode<PersonQuery, PersonQueryVariables>;"
+    `);
+  });
+
+  it('generates plain strings with embedded fragments when documentMode=plainString', async () => {
+    const schema = buildSchema(/* GraphQL */ `
+      type Query {
+        person(id: ID!): Person!
+      }
+      type Person {
+        id: ID!
+        name: String!
+      }
+    `);
+
+    const document = parse(/* GraphQL */ `
+      query Person {
+        person(id: 1) {
+          ...PersonDetails
+        }
+      }
+
+      fragment PersonDetails on Person {
+        id
+        name
+      }
+    `);
+
+    const result = mergeOutputs([
+      await plugin(
+        schema,
+        [{ document }],
+        {
+          documentMode: DocumentMode.plainString,
+        },
+        { outputFile: '' },
+      ),
+    ]);
+
+    expect(result).toMatchInlineSnapshot(`
+      "export const PersonDetailsFragmentDoc = \`
+          fragment PersonDetails on Person {
+        id
+        name
+      }
+          \`;
+      export const PersonDocument = \`
+          query Person {
+        person(id: 1) {
+          ...PersonDetails
+        }
+      }
+          fragment PersonDetails on Person {
+        id
+        name
+      }\`;"
+    `);
+  });
+
+  it('includes the spread fragments in each fragment document when inlineReferencedFragmentsInFragmentDocuments=true', async () => {
+    const schema = buildSchema(/* GraphQL */ `
+      type Query {
+        person(id: ID!): Person!
+      }
+      type Person {
+        id: ID!
+        name: String!
+        children: [Person!]
+      }
+    `);
+
+    const document = parse(/* GraphQL */ `
+      query Person {
+        person(id: 1) {
+          ...PersonDetails
+          children {
+            ...BasePersonDetails
+          }
+        }
+      }
+
+      fragment PersonDetails on Person {
+        ...BasePersonDetails
+        name
+      }
+
+      fragment BasePersonDetails on Person {
+        id
+      }
+    `);
+
+    const result = mergeOutputs([
+      await plugin(
+        schema,
+        [{ document }],
+        {
+          documentMode: DocumentMode.graphQLTag,
+          inlineReferencedFragmentsInFragmentDocuments: true,
+        },
+        { outputFile: '' },
+      ),
+    ]);
+
+    expect(result).toMatchInlineSnapshot(`
+      "import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
+      import gql from 'graphql-tag';
+      export const BasePersonDetailsFragmentDoc = gql\`
+          fragment BasePersonDetails on Person {
+        id
+      }
+          \` as unknown as DocumentNode<BasePersonDetailsFragment, unknown>;
+      export const PersonDetailsFragmentDoc = gql\`
+          fragment PersonDetails on Person {
+        ...BasePersonDetails
+        name
+      }
+          \${BasePersonDetailsFragmentDoc}\` as unknown as DocumentNode<PersonDetailsFragment, unknown>;
       export const PersonDocument = gql\`
           query Person {
         person(id: 1) {

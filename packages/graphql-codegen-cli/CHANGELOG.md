@@ -1,5 +1,312 @@
 # @graphql-codegen/cli
 
+## 8.0.0
+
+### Major Changes
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - BREAKING CHANGE: GraphQL 14 and 15 are no
+  longer supported. The `graphql` peer dependency is now `^16.0.0 || ^17.0.0`, so upgrade `graphql`
+  to version 16 or 17 before updating to this version.
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - BREAKING CHANGE: Node.js versions below
+  22.18.0 are no longer supported. Upgrade to Node.js 22.18.0 or later before updating to this
+  version.
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - `generate()` now returns
+  `Promise<FileOutput[] | void>` instead of `Promise<FileOutput[] | any>`. The result is no longer
+  `any`, so consumers using the result as an array must narrow it first.
+
+  Refs [#11071](https://github.com/dotansimha/graphql-code-generator/issues/11071)
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - BREAKING CHANGE: Remove the deprecated
+  `emitLegacyCommonJSImports` config option and the `--emit-legacy-common-js-imports` CLI flag
+
+  Use `importExtension` (or `--import-extension`) to set the extension appended to relative imports.
+  When `importExtension` is not set, no extension is appended.
+
+  `@graphql-codegen/plugin-helpers` no longer exports `normalizeImportExtension`. Use
+  `importExtension ?? ''` instead.
+
+  Migration:
+
+  ```diff
+   const config: CodegenConfig = {
+  -  emitLegacyCommonJSImports: false,
+  +  importExtension: '.js',
+   };
+  ```
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - BREAKING CHANGE: `@graphql-tools/*`
+  dependencies are updated to their latest majors, which require Node.js 22.18.0 or later and
+  GraphQL 16 or 17. If you import `@graphql-tools/*` packages in your own code, update them to the
+  same majors to avoid duplicate installs. `@graphql-tools/code-file-loader@9` now extracts
+  `#graphql`-marked template literals by default, so code files that contain such templates can
+  produce newly found documents; check your generated output after upgrading. To keep the previous
+  behavior, set `pluckConfig: { gqlHashComment: '' }`.
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - BREAKING CHANGE - `config.generates` no
+  longer takes `ConfiguredPlugin[]`, takes `ConfiguredOutput[]` instead
+
+  `config.generates`'s previous typing allowed a value to be an array e.g.
+
+  ```
+  generates: {
+    "src/gql/generated.ts": [{ typescript: {} }]
+  }
+  ```
+
+  However, this never worked because this config is eventually passed into `normalizeOutputParam`
+  which previously had this bug in the implementation:
+
+  ```ts
+  export function normalizeOutputParam(config) {
+    // 0. When config is an array...
+    if (isOutputConfigArray(config)) {
+      // 1. `isOutputConfigArray(config)` was `Array.isArray(config)` -> returns true
+      return {
+        documents: [],
+        schema: [],
+        plugins: isConfiguredOutput(config) ? config.plugins : config // 2. ‼️ `isConfiguredOutput(config)` was `typeof config === 'object'` -> returns true. This is a bug because we are accessing `plugins` property of an array, which will ALWAYS be `undefined` -> the output is always rejected as "Invalid Codegen Configuration"
+      }
+    }
+    if (isConfiguredOutput(config)) {
+      return config
+    }
+    throw new Error(`Invalid "generates" config!`)
+  }
+  ```
+
+  Now, an array is still accepted, but as `ConfiguredOutput[]` instead. For this major version
+  release, only the first array element is used, and `@graphql-codegen/cli` logs a warning when
+  there is more than one element.
+
+  `normalizeOutputParam` now returns `ConfiguredOutput[]` instead of a single `ConfiguredOutput`.
+
+  `@graphql-codegen/cli` also throws its "Invalid Codegen Configuration" error when a `generates`
+  array is empty or its first element is not a config object. This error is now a single generic
+  message, no longer naming the output file, and it shows a TypeScript `CodegenConfig` example with
+  the `ConfiguredOutput` shape instead of the old YAML plugin-list example.
+
+### Patch Changes
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - dependencies updates:
+  - Updated dependency
+    [`@graphql-tools/apollo-engine-loader@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/apollo-engine-loader/v/9.0.2)
+    (from `^8.0.38`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/code-file-loader@^9.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/code-file-loader/v/9.0.3)
+    (from `^8.1.41`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/git-loader@^9.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/git-loader/v/9.0.3)
+    (from `^8.0.44`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/github-loader@^10.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/github-loader/v/10.0.3)
+    (from `^9.1.11`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/graphql-file-loader@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/graphql-file-loader/v/9.0.2)
+    (from `^8.1.22`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/json-file-loader@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/json-file-loader/v/9.0.2)
+    (from `^8.0.36`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/load@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/load/v/9.0.2)
+    (from `^8.1.19`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/merge@^10.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/merge/v/10.0.2)
+    (from `^9.2.6`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/url-loader@^10.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/url-loader/v/10.0.2)
+    (from `^9.1.12`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/utils@^13.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/utils/v/13.0.2)
+    (from `^12.0.3`, in `dependencies`)
+  - Updated dependency
+    [`graphql-config@^6.0.0` ↗︎](https://www.npmjs.com/package/graphql-config/v/6.0.0) (from
+    `^5.1.8`, in `dependencies`)
+  - Updated dependency
+    [`graphql@^16.0.0 || ^17.0.0` ↗︎](https://www.npmjs.com/package/graphql/v/16.0.0) (from
+    `^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0`,
+    in `peerDependencies`)
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - dependencies updates:
+  - Updated dependency
+    [`@graphql-tools/apollo-engine-loader@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/apollo-engine-loader/v/9.0.2)
+    (from `^8.0.38`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/code-file-loader@^9.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/code-file-loader/v/9.0.3)
+    (from `^8.1.41`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/git-loader@^9.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/git-loader/v/9.0.3)
+    (from `^8.0.44`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/github-loader@^10.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/github-loader/v/10.0.3)
+    (from `^9.1.11`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/graphql-file-loader@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/graphql-file-loader/v/9.0.2)
+    (from `^8.1.22`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/json-file-loader@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/json-file-loader/v/9.0.2)
+    (from `^8.0.36`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/load@^9.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/load/v/9.0.2)
+    (from `^8.1.19`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/merge@^10.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/merge/v/10.0.2)
+    (from `^9.2.6`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/url-loader@^10.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/url-loader/v/10.0.2)
+    (from `^9.1.12`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/utils@^13.0.2` ↗︎](https://www.npmjs.com/package/@graphql-tools/utils/v/13.0.2)
+    (from `^12.0.3`, in `dependencies`)
+  - Updated dependency
+    [`graphql-config@^6.0.0` ↗︎](https://www.npmjs.com/package/graphql-config/v/6.0.0) (from
+    `^5.1.8`, in `dependencies`)
+  - Updated dependency
+    [`graphql@^16.0.0 || ^17.0.0` ↗︎](https://www.npmjs.com/package/graphql/v/16.0.0) (from
+    `^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0`,
+    in `peerDependencies`)
+
+- [#11075](https://github.com/dotansimha/graphql-code-generator/pull/11075)
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - dependencies updates:
+  - Updated dependency
+    [`graphql-config@^6.0.0` ↗︎](https://www.npmjs.com/package/graphql-config/v/6.0.0) (from
+    `^5.1.8`, in `dependencies`)
+- Updated dependencies
+  [[`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`409ffbf`](https://github.com/dotansimha/graphql-code-generator/commit/409ffbfda5c56d6f46f0e0a4045c547714df2264),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`7366c63`](https://github.com/dotansimha/graphql-code-generator/commit/7366c63b4fca59951f15d017bb939c5460ba2451),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d),
+  [`fa49a37`](https://github.com/dotansimha/graphql-code-generator/commit/fa49a3725bf269abf07616b5df1336cf86a4838d)]:
+  - @graphql-codegen/client-preset@7.0.0
+  - @graphql-codegen/core@7.0.0
+  - @graphql-codegen/plugin-helpers@8.0.0
+
+## 7.4.6
+
+### Patch Changes
+
+- [#10985](https://github.com/dotansimha/graphql-code-generator/pull/10985)
+  [`d8aa07f`](https://github.com/dotansimha/graphql-code-generator/commit/d8aa07fed45a2787f46da30a7ffb52651b32dc67)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - Build with `strict: true`, which changes
+  these emitted type declarations:
+  - `@graphql-codegen/cli`: `mkdirp` returns `Promise<string | undefined>`, and the `require` (`-r`)
+    CLI option's `default` is typed `never[]` instead of `any[]`.
+  - `@graphql-codegen/visitor-plugin-common`: `BaseResolversVisitor` and `BaseTypesVisitor`
+    `SchemaDefinition()`/`SchemaExtension()` return `null` instead of `any`.
+  - `@graphql-codegen/visitor-plugin-common`: `BaseSelectionSetProcessor.typeCache` is keyed by
+    `Location | undefined`.
+  - `@graphql-codegen/visitor-plugin-common`: `SelectionSetToObject.buildSelectionSet` returns
+    `typeInfo` as `{ name: string; type: string } | null`.
+  - `@graphql-codegen/visitor-plugin-common`: `getPossibleTypes` accepts `null` as the type, which
+    graphql 15's `schema.getType()` can return.
+  - `@graphql-codegen/visitor-plugin-common`: `removeDescription` returns nodes with
+    `description: undefined` instead of `any`.
+  - `@graphql-codegen/typescript`: `TsIntrospectionVisitor`'s constructor takes `pluginConfig` as
+    `TypeScriptPluginConfig | undefined`, `DirectiveDefinition()` returns `null` and
+    `ObjectTypeDefinition()` returns `string | null`.
+  - `@graphql-codegen/client-preset`: the babel preset accepts `options` as
+    `ClientBabelPresetOptions | null | undefined`.
+  - `@graphql-codegen/testing`: `mockGraphQLServer` returns `nock.Scope | null`.
+  - `@graphql-codegen/graphql-modules-preset`: a schema without `extensions` (graphql 15) throws the
+    "requires to use GraphQL SDL" error instead of a `TypeError`.
+
+  Generated output is unchanged.
+
+- Updated dependencies
+  [[`d8aa07f`](https://github.com/dotansimha/graphql-code-generator/commit/d8aa07fed45a2787f46da30a7ffb52651b32dc67)]:
+  - @graphql-codegen/client-preset@6.2.3
+
+## 7.4.5
+
+### Patch Changes
+
+- [#11043](https://github.com/dotansimha/graphql-code-generator/pull/11043)
+  [`31761f9`](https://github.com/dotansimha/graphql-code-generator/commit/31761f9e13573ea777621f857546d098f9c4489c)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - dependencies updates:
+  - Updated dependency
+    [`@graphql-tools/apollo-engine-loader@^8.0.38` ↗︎](https://www.npmjs.com/package/@graphql-tools/apollo-engine-loader/v/8.0.38)
+    (from `^8.0.28`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/code-file-loader@^8.1.41` ↗︎](https://www.npmjs.com/package/@graphql-tools/code-file-loader/v/8.1.41)
+    (from `^8.1.39`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/git-loader@^8.0.44` ↗︎](https://www.npmjs.com/package/@graphql-tools/git-loader/v/8.0.44)
+    (from `^8.0.32`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/github-loader@^9.1.11` ↗︎](https://www.npmjs.com/package/@graphql-tools/github-loader/v/9.1.11)
+    (from `^9.0.6`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/graphql-file-loader@^8.1.22` ↗︎](https://www.npmjs.com/package/@graphql-tools/graphql-file-loader/v/8.1.22)
+    (from `^8.1.11`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/json-file-loader@^8.0.36` ↗︎](https://www.npmjs.com/package/@graphql-tools/json-file-loader/v/8.0.36)
+    (from `^8.0.26`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/load@^8.1.19` ↗︎](https://www.npmjs.com/package/@graphql-tools/load/v/8.1.19)
+    (from `^8.1.8`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/merge@^9.2.6` ↗︎](https://www.npmjs.com/package/@graphql-tools/merge/v/9.2.6)
+    (from `^9.2.4`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/url-loader@^9.1.12` ↗︎](https://www.npmjs.com/package/@graphql-tools/url-loader/v/9.1.12)
+    (from `^9.0.6`, in `dependencies`)
+  - Updated dependency
+    [`@graphql-tools/utils@^12.0.3` ↗︎](https://www.npmjs.com/package/@graphql-tools/utils/v/12.0.3)
+    (from `^11.2.0`, in `dependencies`)
+  - Updated dependency
+    [`graphql-config@^5.1.8` ↗︎](https://www.npmjs.com/package/graphql-config/v/5.1.8) (from
+    `^5.1.6`, in `dependencies`)
+
+- [#11043](https://github.com/dotansimha/graphql-code-generator/pull/11043)
+  [`31761f9`](https://github.com/dotansimha/graphql-code-generator/commit/31761f9e13573ea777621f857546d098f9c4489c)
+  Thanks [@eddeee888](https://github.com/eddeee888)! - Update `@graphql-tools/utils` to v12, and
+  other `@graphql-tools/*` dependencies and `graphql-config` to releases that use it, to pick up the
+  fix for [GHSA-7mx3-vvmw-hjmv](https://github.com/advisories/GHSA-7mx3-vvmw-hjmv) (prototype
+  pollution in `mergeDeep`, `@graphql-tools/utils` <= 12.0.0).
+
+  `@graphql-codegen/cli` now unwraps the `AggregateError` that newer `@graphql-tools/load` versions
+  throw, so schema and document syntax errors still print the native `GraphQLError` with its file
+  location.
+
+- Updated dependencies
+  [[`31761f9`](https://github.com/dotansimha/graphql-code-generator/commit/31761f9e13573ea777621f857546d098f9c4489c),
+  [`31761f9`](https://github.com/dotansimha/graphql-code-generator/commit/31761f9e13573ea777621f857546d098f9c4489c),
+  [`31761f9`](https://github.com/dotansimha/graphql-code-generator/commit/31761f9e13573ea777621f857546d098f9c4489c),
+  [`31761f9`](https://github.com/dotansimha/graphql-code-generator/commit/31761f9e13573ea777621f857546d098f9c4489c)]:
+  - @graphql-codegen/client-preset@6.2.2
+  - @graphql-codegen/core@6.2.2
+  - @graphql-codegen/plugin-helpers@7.4.2
+
 ## 7.4.4
 
 ### Patch Changes

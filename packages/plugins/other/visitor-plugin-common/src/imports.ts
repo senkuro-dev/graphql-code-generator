@@ -1,6 +1,5 @@
 import { dirname, isAbsolute, join, relative, resolve } from 'path';
 import parse from 'parse-filepath';
-import { normalizeImportExtension } from '@graphql-codegen/plugin-helpers';
 import type { ParsedEnumValuesMap } from './types';
 
 export type ImportDeclaration<T = string> = {
@@ -9,7 +8,6 @@ export type ImportDeclaration<T = string> = {
   baseOutputDir: string;
   baseDir: string;
   typesImport: boolean;
-  emitLegacyCommonJSImports?: boolean;
   importExtension: '' | `.${string}`;
 };
 
@@ -40,7 +38,7 @@ export function generateFragmentImportStatement(
   const { importSource: fragmentImportSource, ...rest } = statement;
   const { identifiers, path, namespace } = fragmentImportSource;
   const importSource: ImportSource<string> = {
-    identifiers: identifiers
+    identifiers: (identifiers || [])
       .filter(fragmentImport => kind === 'both' || kind === fragmentImport.kind)
       .map(({ name }) => name),
     path,
@@ -65,10 +63,7 @@ export function generateImportStatement(statement: ImportDeclaration): string {
     : '*';
   const importExtension =
     importPath.startsWith('/') || importPath.startsWith('.')
-      ? normalizeImportExtension({
-          emitLegacyCommonJSImports: statement.emitLegacyCommonJSImports,
-          importExtension: statement.importExtension,
-        })
+      ? (statement.importExtension ?? '')
       : '';
   const importAlias = importSource.namespace ? ` as ${importSource.namespace}` : '';
   const importStatement = typesImport ? 'import type' : 'import';
@@ -126,9 +121,9 @@ export function getEnumsImports({
     useTypeImports,
   }: {
     typeIdentifierConverted: string;
-    importIdentifier: string | null;
-    sourceIdentifier: string | null;
-    sourceFile: string | null;
+    importIdentifier?: string | null;
+    sourceIdentifier?: string | null;
+    sourceFile?: string | null;
     useTypeImports: boolean;
   }): string[] {
     if (importIdentifier !== sourceIdentifier) {
@@ -196,11 +191,17 @@ export function buildTypeImport({
   useTypeImports,
   asDefault = false,
 }: {
-  identifier: string;
-  source: string;
+  identifier: string | null | undefined;
+  source: string | null | undefined;
   useTypeImports: boolean;
   asDefault?: boolean;
 }): string {
+  // `== null` (not a falsy check) so only a missing identifier or source throws; an empty string is still allowed
+  if (identifier == null || source == null) {
+    throw new Error(
+      `Cannot build a type import without an identifier and a source (identifier: ${identifier}, source: ${source})`,
+    );
+  }
   if (asDefault) {
     if (useTypeImports) {
       return `import type { default as ${identifier} } from '${source}';`;

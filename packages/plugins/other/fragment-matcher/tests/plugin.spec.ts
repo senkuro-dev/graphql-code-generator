@@ -68,30 +68,52 @@ describe('Fragment Matcher Plugin', () => {
       const allCases = extensions.concat(extensions.map(val => val.toUpperCase()));
 
       try {
-        await Promise.all(allCases.map(ext => validate(schema, [], {}, `foo${ext}`, [])));
+        await Promise.all(
+          allCases.map(ext =>
+            validate(
+              schema,
+              [],
+              {},
+              { outputFile: `foo${ext}`, allPlugins: [], pluginContext: {} },
+            ),
+          ),
+        );
 
         throw new Error('DONE');
       } catch (e: any) {
+        // `e` is `any` to read `e.message` directly; typing it needs an `instanceof Error` guard before each assertion.
         expect(e.message).toEqual('DONE');
       }
     });
 
     it('should throw on commonjs + ts', async () => {
       try {
-        await validate(schema, [], { module: 'commonjs' }, 'foo.ts', []);
+        await validate(
+          schema,
+          [],
+          { module: 'commonjs' },
+          { outputFile: 'foo.ts', allPlugins: [], pluginContext: {} },
+        );
 
         throw new Error('SHOULD_NOT_BE_HERE');
       } catch (e: any) {
+        // `e` is `any` to read `e.message` directly; typing it needs an `instanceof Error` guard before each assertion.
         expect(e.message).toContain('commonjs');
       }
     });
 
     it('should throw on unsupported extension', async () => {
       try {
-        await validate(schema, [], {}, 'foo.yml', []);
+        await validate(
+          schema,
+          [],
+          {},
+          { outputFile: 'foo.yml', allPlugins: [], pluginContext: {} },
+        );
 
         throw new Error('SHOULD_NOT_BE_HERE');
       } catch (e: any) {
+        // `e` is `any` to read `e.message` directly; typing it needs an `instanceof Error` guard before each assertion.
         expect(e.message).toContain('extension');
       }
     });
@@ -141,6 +163,21 @@ describe('Fragment Matcher Plugin', () => {
 
       expect(jsContent).toBeSimilarStringTo(output);
       expect(jsxContent).toBeSimilarStringTo(output);
+    });
+
+    it('should generate correctly indented code', async () => {
+      const jsContent = await plugin(
+        schema,
+        [],
+        {
+          apolloClientVersion: 2,
+        },
+        {
+          outputFile: 'foo.js',
+        },
+      );
+
+      expect(jsContent).toEqual(`export default ${introspection}\n`);
     });
 
     it('should be able to use commonjs', async () => {
@@ -252,6 +289,28 @@ describe('Fragment Matcher Plugin', () => {
 
       expect(tsContent).toBeSimilarStringTo(output);
       expect(tsxContent).toBeSimilarStringTo(output);
+    });
+
+    it('should generate correctly indented code', async () => {
+      const tsContent = await plugin(
+        schema,
+        [],
+        {
+          apolloClientVersion: 3,
+        },
+        {
+          outputFile: 'foo.ts',
+        },
+      );
+
+      expect(tsContent).toEqual(`export interface PossibleTypesResultData {
+  possibleTypes: {
+    [key: string]: string[]
+  }
+}
+const result: PossibleTypesResultData = ${apolloClient3Result};
+export default result;
+`);
     });
 
     it('should use es2015 even though commonjs is requested', async () => {

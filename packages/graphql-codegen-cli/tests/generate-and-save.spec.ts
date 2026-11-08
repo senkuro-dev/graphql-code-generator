@@ -1,11 +1,12 @@
 import { platform } from 'os';
 import { dirname, join, sep } from 'path';
+import { GraphQLError } from 'graphql';
 import logSymbols from 'log-symbols';
-import { Types } from '@graphql-codegen/plugin-helpers';
 import '@graphql-codegen/testing';
 import { makeDirectorySync } from 'make-dir';
 import { createContext } from '../src/config.js';
 import { generate } from '../src/generate-and-save.js';
+import { loadSchema } from '../src/load.js';
 import * as fs from '../src/utils/file-system.js';
 import { setLogger } from '../src/utils/logger.js';
 
@@ -51,7 +52,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it writes a new file
     expect(writeSpy).toHaveBeenCalled();
   });
@@ -78,7 +79,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it checks if file is there
     expect(readSpy).toHaveBeenCalledWith(filename);
     // makes sure it doesn't write a new file
@@ -105,7 +106,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it writes a new file
     expect(writeSpy).toHaveBeenCalled();
   });
@@ -131,7 +132,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it checks if file is there
     expect(readSpy).toHaveBeenCalledWith(filename);
     // makes sure it doesn't write a new file
@@ -161,7 +162,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it doesn't write a new file
     expect(writeSpy).toHaveBeenCalled();
   });
@@ -190,7 +191,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it checks if file is there
     expect(readSpy).toHaveBeenCalledWith(filename);
     // makes sure it writes a new file
@@ -221,7 +222,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it checks if file is there
     expect(readSpy).toHaveBeenCalledWith(filename);
     // makes sure it doesn't write a new file
@@ -252,7 +253,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it checks if file is there
     expect(readSpy).toHaveBeenCalledWith(filename);
     // makes sure it writes a new file
@@ -285,7 +286,7 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
+    expect(output).toHaveLength(1);
     // makes sure it checks if file is there
     expect(readSpy).toHaveBeenCalledWith(filename);
     // makes sure it doesn't write a new file
@@ -308,7 +309,7 @@ describe('generate-and-save', () => {
   `,
       'utf8',
     );
-    const generateOnce: () => Promise<Types.FileOutput[]> = () =>
+    const generateOnce = () =>
       generate(
         {
           schema: SIMPLE_TEST_SCHEMA,
@@ -321,7 +322,8 @@ describe('generate-and-save', () => {
         },
         true,
       );
-    const [firstOutput] = await generateOnce();
+    // This `|| []` is only to satisfy type safety
+    const [firstOutput] = (await generateOnce()) || [];
     fs.writeFileSync(firstOutput.filename, firstOutput.content);
     await generateOnce();
   });
@@ -341,8 +343,9 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
-    expect(output[0].content).toMatch('Used apollo-server');
+    expect(output).toHaveLength(1);
+    // This `?.` is only to satisfy type safety
+    expect(output?.[0].content).toMatch('Used apollo-server');
     // makes sure it doesn't write a new file
     expect(writeSpy).toHaveBeenCalled();
   });
@@ -365,8 +368,9 @@ describe('generate-and-save', () => {
       true,
     );
 
-    expect(output.length).toBe(1);
-    expect(output[0].content).toMatch('new content');
+    expect(output).toHaveLength(1);
+    // This `?.` is only to satisfy type safety
+    expect(output?.[0].content).toMatch('new content');
     // makes sure it doesn't write a new file
     expect(writeSpy).toHaveBeenCalled();
   });
@@ -554,6 +558,69 @@ describe('generate-and-save', () => {
       }
     });
 
+    test('Schema loading error - should print every error when multiple loaders fail for one pointer', async () => {
+      const loaders = [
+        {
+          load: async (): Promise<never> => {
+            throw new GraphQLError('First loader failed');
+          },
+        },
+        {
+          load: async (): Promise<never> => {
+            throw new GraphQLError('Second loader failed');
+          },
+        },
+      ];
+
+      await expect(
+        loadSchema({ 'schema.graphql': {} }, { generates: {}, config: { loaders } }),
+      ).rejects.toThrow(
+        new Error(
+          [
+            'Failed to load schema from schema.graphql:',
+            'First loader failed',
+            '',
+            'Second loader failed',
+            '\nGraphQL Code Generator supports:',
+            '\n- ES Modules and CommonJS exports (export as default or named export "schema")',
+            '- Introspection JSON File',
+            '- URL of GraphQL endpoint',
+            '- Multiple files with type definitions (glob expression)',
+            '- String in config file',
+            '\nTry to use one of above options and run codegen again.\n',
+          ].join('\n'),
+        ),
+      );
+    });
+
+    test('Schema loading error - should print a thrown non-Error value without a stack line', async () => {
+      const loaders = [
+        {
+          load: async (): Promise<never> => {
+            throw 'Loader failed with a string';
+          },
+        },
+      ];
+
+      await expect(
+        loadSchema({ 'schema.graphql': {} }, { generates: {}, config: { loaders } }),
+      ).rejects.toThrow(
+        new Error(
+          [
+            'Failed to load schema from schema.graphql:',
+            'Loader failed with a string',
+            '\nGraphQL Code Generator supports:',
+            '\n- ES Modules and CommonJS exports (export as default or named export "schema")',
+            '- Introspection JSON File',
+            '- URL of GraphQL endpoint',
+            '- Multiple files with type definitions (glob expression)',
+            '- String in config file',
+            '\nTry to use one of above options and run codegen again.\n',
+          ].join('\n'),
+        ),
+      );
+    });
+
     test('No documents found - should throw error by default', async () => {
       expect.assertions(platform() === 'win32' ? 2 : 1);
       outputErrorSpy.mockImplementation(() => true);
@@ -616,7 +683,7 @@ describe('generate-and-save', () => {
       try {
         const config = await createContext({
           config: './tests/test-files/graphql.config.no-doc.cjs',
-          project: undefined,
+          project: '',
           errorsOnly: true,
           overwrite: true,
           profile: true,
@@ -649,7 +716,26 @@ describe('generate-and-save', () => {
       vi.spyOn(fs, 'writeFile').mockImplementation(() => Promise.resolve());
       const config = await createContext({
         config: './tests/test-files/graphql.config.no-doc-ignored.cjs',
-        project: undefined,
+        project: '',
+        errorsOnly: true,
+        overwrite: true,
+        profile: true,
+        require: [],
+        silent: false,
+        watch: false,
+      });
+
+      await generate(config, false);
+
+      expect(outputErrorSpy).not.toHaveBeenCalled();
+    });
+
+    test('No external documents found - GraphQL Config - should not fail if ignoreNoDocuments=true', async () => {
+      outputErrorSpy.mockImplementation(() => true);
+      vi.spyOn(fs, 'writeFile').mockImplementation(() => Promise.resolve());
+      const config = await createContext({
+        config: './tests/test-files/graphql.config.no-external-doc-ignored.cjs',
+        project: '',
         errorsOnly: true,
         overwrite: true,
         profile: true,
@@ -703,8 +789,9 @@ describe('generate-and-save', () => {
         false,
       );
 
-      expect(output.length).toBe(1);
-      expect(output[0].filename).toBe('src/b.ts');
+      expect(output).toHaveLength(1);
+      // This `?.` is only to satisfy type safety
+      expect(output?.[0].filename).toBe('src/b.ts');
       expect(mockLogger.warn.mock.calls[0][0]).toBeSimilarStringTo(
         `${logSymbols.warning} One or more errors occurred, some files were generated. To prevent any output on errors, set config.allowPartialOutputs=false`,
       );
@@ -787,6 +874,7 @@ describe('generate-and-save', () => {
             schema: SIMPLE_TEST_SCHEMA,
             generates: {
               'src/a.ts': {
+                // @ts-expect-error intentionally invalid preset name
                 preset: 'this-preset-does-not-exist',
               },
               'src/b.ts': {
